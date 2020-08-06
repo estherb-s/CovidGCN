@@ -1,4 +1,5 @@
 data/*
+pygeo/*
 
 # Jupyter Notebook
 .ipynb_checkpoints
