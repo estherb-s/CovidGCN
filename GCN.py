@@ -11,10 +11,11 @@ from torch_geometric.nn import GCNConv
 from torch_geometric.nn import ChebConv
 from torch_geometric.nn import global_add_pool, global_mean_pool
 from torch_geometric.data import DataLoader
-from torch_scatter import scatter_mean
+# from torch_scatter import scatter_mean
 from mol2graph import mol2vec
 from rdkit.Chem.Draw import IPythonConsole
 from rdkit.Chem import Draw
+from torchbearer import Trial
 
 tasks = ['Active']  # Featurize dataset
 dataset = pd.read_csv("data/trainingdata.csv")
@@ -25,7 +26,8 @@ test_dataset = dataset[~msk]
 
 train_mols = [Chem.MolFromSmiles(smiles) for smiles in train_dataset["SMILES"]]
 test_mols = [Chem.MolFromSmiles(smiles) for smiles in test_dataset["SMILES"]]
-# print(train_mols)
+print(train_mols)
+quit()
 
 # Convert molecule to graph w. the defined mol2vec fn & add label for training
 train_X = [mol2vec(m) for m in train_mols]
@@ -42,6 +44,10 @@ for i, data in enumerate(test_X):
       data.y = torch.tensor([y], dtype=torch.long)
 train_loader = DataLoader(train_X, batch_size=64, shuffle=True, drop_last=True)
 test_loader = DataLoader(test_X, batch_size=64, shuffle=True, drop_last=True)
+
+print(train_X)
+quit()
+# ***Get features and labels from train_X and test_X ****
 
 # Defined model architecture for GCN
 n_features = 75
@@ -74,8 +80,34 @@ class Net(torch.nn.Module):
         return x 
 
 # Train the model and evaluate the performance
-model = Net().to(device)
+model = Net()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+# optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+
+# Train model for 200 epochs 
+model.train()
+for epoch in range(200):
+    optimizer.zero_grad()
+    out = model(data)
+    loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask])
+    loss.backward()
+    optimizer.step()
+
+# Evaluate model's performance
+model.eval()
+_, pred = model(data).max(dim=1)
+correct = int(pred[data.test_mask].eq(data.y[data.test_mask]).sum().item())
+acc = correct / int(data.test_mask.sum())
+print('Accuracy: {:.4f}'.format(acc))
+
+
+# trial = Trial(model, optimiser, loss_function, metrics=['loss', 'accuracy']).to(device)
+# trial.with_generators(trainloader, test_generator=testloader)
+# trial.run(epochs=10)
+# results = trial.evaluate(data_key=torchbearer.TEST_DATA)
+# print(results)
+
 def train(epoch):
     model.train()
     loss_all = 0
@@ -112,3 +144,41 @@ ax.plot([e for e in range(1,101)], hist["acc"], label="train_acc")
 ax.plot([e for e in range(1,101)], hist["test_acc"], label="test_acc")
 plt.xlabel("epoch")
 ax.legend()
+
+# Average precision score and hit rate top 100
+from sklearn.metrics import average_precision_score
+from sklearn.metrics import roc_auc_score
+# Fit trained model
+model.fit(train_dataset, nb_epoch=20)
+y_true = np.squeeze(valid_dataset.y).astype(int)
+print(y_true)
+y_pred = model.predict(valid_dataset)[:,0,1].astype(int)
+print(y_pred)
+print("Average Precision Score:%s" % average_precision_score(y_true, y_pred))
+sorted_results = sorted(zip(y_pred, y_true), reverse=True)
+hit_rate_100 = sum(x[1] for x in sorted_results[:100]) / 100
+print("Hit Rate Top 100: %s" % hit_rate_100)
+
+# ROC-AUC score for training, test, validation datasets
+
+y_prob = classifier.predict_proba(X_test)
+
+macro_roc_auc_ovo = roc_auc_score(y_test, y_prob, multi_class="ovo", average="macro")
+
+metric = dc.metrics.Metric(
+    dc.metrics.roc_auc_score, np.mean, mode="classification") #ADJUST****
+
+print("Evaluating model")
+# train_scores = model.evaluate(train_dataset, [metric], transformers)
+# print("Training ROC-AUC Score: %f" % train_scores["mean-roc_auc_score"])
+# valid_scores = model.evaluate(valid_dataset, [metric], transformers)
+# print("Validation ROC-AUC Score: %f" % valid_scores["mean-roc_auc_score"])
+
+# test_scores = model.evaluate(test_dataset, [metric], transformers)
+# print("Test ROC-AUC Score: %f" % test_scores["mean-roc_auc_score"])
+
+# predicted_val = model.predict(valid_dataset)
+# true_val = valid_dataset.y
+
+# print(predicted_val.shape)
+# print(true_val.shape)
